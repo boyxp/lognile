@@ -3,6 +3,8 @@ package main
 import "os"
 import "io"
 import "log"
+import "time"
+import "sync"
 import "bufio"
 import "syscall"
 import "os/signal"
@@ -32,7 +34,7 @@ type Lognile struct {
 	db string
 	pattern map[string][]string
 	log chan map[string]string
-	fp map[uint64]*os.File
+	fp map[uint64]*Handler
 	node map[string]uint64
 	watcher *fsnotify.Watcher
 	callback func(log map[string]string)
@@ -64,7 +66,7 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 	L.parse(pattern)
 
 	L.log  = make(chan map[string]string, 1000)
-	L.fp   = map[uint64]*os.File{}
+	L.fp   = map[uint64]*Handler{}
 	L.node = map[string]uint64{}
 	L.callback = callback
 
@@ -204,22 +206,40 @@ func (L *Lognile) add(dir string) {
 		}
 
 		for _, file := range list {
-			L.read(file)
+			L.read(file, false)
 		}
 	}
 }
 
-func (L *Lognile) read(file string) {
-	fp := L.open(file)
+func (L *Lognile) read(file string, wait bool) {
+	handler := L.open(file)
+	if handler.Lock()==false {
+		return
+	}
 
+	log.Println("加锁", file)
+
+	fp     := handler.Fp()
 	reader := bufio.NewReader(fp)
+	retry  := 0
 	for {
 		line, err := reader.ReadString('\n')
 		if err == io.EOF {
 			if len(line)>1 {
 				L.log <- map[string]string{"file":file, "log":line[:len(line)-1]}
 			}
-			break
+
+			if wait==false || retry>=5 {
+				break
+			}
+
+			time.Sleep(time.Duration(1) * time.Second)
+
+			log.Println("休息重试", file, retry)
+
+			retry++
+
+			continue
 		}
 
 		if err != nil {
@@ -229,15 +249,21 @@ func (L *Lognile) read(file string) {
 		if len(line)>1 {
 			L.log <- map[string]string{"file":file, "log":line[:len(line)-1]}
 		}
+
+		retry = 0
 	}
 
 	offset, _ := fp.Seek(0, 1)
 
 	_node := L.inode(file)
 	L.offset[_node] = offset
+
+	handler.Unlock()
+
+	log.Println("解锁", file)
 }
 
-func (L *Lognile) open(file string) *os.File {
+func (L *Lognile) open(file string) *Handler {
 	node  := L.inode(file)
 	fp,ok := L.fp[node]
 	if !ok {
@@ -251,8 +277,8 @@ func (L *Lognile) open(file string) *os.File {
 			_fp.Seek(offset, 0)
 		}
 
-		fp = _fp
-		L.fp[node] = _fp
+		fp = &Handler{fp:_fp}
+		L.fp[node] = fp
 	}
 
 	return fp
@@ -279,7 +305,7 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
                 //}
 
 				if event.Has(fsnotify.Write) {
-					L.read(event.Name)
+					go L.read(event.Name, true)
 				}
 
 				if event.Has(fsnotify.Remove) {
@@ -322,7 +348,7 @@ func (L *Lognile) create(file string) {
 		return
 	}
 
-	L.read(file)
+	L.read(file, false)
 }
 
 func (L *Lognile) delete(file string) {
@@ -332,9 +358,9 @@ func (L *Lognile) delete(file string) {
     	delete(L.offset, fid)
     }
 
-    fp, ok2 := L.fp[fid]
+    handler, ok2 := L.fp[fid]
     if ok2 {
-    	fp.Close()
+    	handler.Fp().Close()
     }
 }
 
@@ -344,8 +370,8 @@ func (L *Lognile) Exit() {
 	log.Println("保存日志进度成功")
 
 	log.Println("关闭文件句柄...")
-	for _, _fp := range L.fp {
-		_fp.Close()
+	for _, _handler := range L.fp {
+		_handler.Fp().Close()
 	}
 	log.Println("关闭文件句柄成功")
 
@@ -372,4 +398,21 @@ func (L *Lognile) signal() {
 			}
 		}
 	}()
+}
+
+type Handler struct {
+	fp *os.File
+	mu sync.Mutex
+}
+
+func (H *Handler) Lock() bool {
+	return H.mu.TryLock()
+}
+
+func (H *Handler) Unlock() {
+	H.mu.Unlock()
+}
+
+func (H *Handler) Fp() *os.File {
+	return H.fp
 }
