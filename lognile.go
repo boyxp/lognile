@@ -29,7 +29,11 @@ type Lognile struct {
 }
 
 func (L *Lognile) Init() {
+	log.Println("启动")
+
 	config := L.config("config.yaml")
+
+	log.Println("解析配置文件成功")
 
 	if v, ok := config["db"];ok {
 		L.db = v.(string)
@@ -37,46 +41,59 @@ func (L *Lognile) Init() {
 		L.db = "lognile.db"
 	}
 
+	log.Println("读取进度数据库文件为:", L.db)
+
 	L.offset = L.load(L.db)
+
+	log.Println("加载数据库进度文件成功")
 
 	pattern, ok := config["pattern"]
 	if !ok {
-		panic("没有配置日志路径")	
+		panic("没有配置日志监听路径")	
 	}
 	L.parse(pattern)
 
-	L.log   = make(chan map[string]string, 1000)
-	L.fp    = map[uint64]*os.File{}
+	L.log  = make(chan map[string]string, 1000)
+	L.fp   = map[uint64]*os.File{}
 	L.node = map[string]uint64{}
+
+	log.Println("启动文件夹监听")
 
     watcher, err := fsnotify.NewWatcher()
     if err != nil {
-        log.Fatal(err)
+        log.Fatal("文件夹监听初始化失败", err)
     }
     L.watcher = watcher
     defer watcher.Close()
 
+    log.Println("文件夹监听进程启动成功")
 
 	for dir, _ := range L.pattern {
+		log.Println("添加日志监控文件夹:", dir)
+
 		L.add(dir)
 		L.watcher.Add(dir)
 	}
 
+	log.Println("启动监听事件消费")
     go L.listen(watcher)
 
-	//log.Println(L.inode("log.db"))
-
+    log.Println("启动日志实时输出")
 	go func() {
 		for{
         	select {
         		case v := <-L.log:
-            		log.Println(v)
+            			log.Println(v)
             	default :
     		}
     	}
 	}()
 
-	L.exit()
+	log.Println("监听进程退出信号")
+
+	L.signal()
+
+	log.Println("启动成功")
 
 	<-make(chan struct{})
 }
@@ -84,13 +101,13 @@ func (L *Lognile) Init() {
 func (L *Lognile) config(cfg string) map[string]any {
 	content, err := os.ReadFile(cfg)
     if err != nil {
-        log.Fatal(err)
+        log.Fatal("配置文件读取失败：", err)
     }
 
     data := make(map[string]any)
     err   = yaml.Unmarshal(content, &data)
     if err != nil {
-        log.Fatalf("error: %v", err)
+        log.Fatal("配置文件解析失败:", err)
     }
 
     return data
@@ -102,7 +119,7 @@ func (L *Lognile) parse(pattern any) {
 	for _, p := range pattern.([]any) {
 		abs, err := filepath.Abs(p.(string))
 		if err!=nil {
-			log.Fatal(err)
+			log.Fatal("文件路径转绝对路径失败:", p.(string), err)
 		}
 
 		dir  := filepath.Dir(abs)
@@ -122,18 +139,18 @@ func (L *Lognile) load(db string) map[uint64]int64 {
 		if os.IsNotExist(err) {
 			return map[uint64]int64{}
 		}
-		log.Fatal(err)
+		log.Fatal("db文件报错", err)
 	}
 
 	content, err := os.ReadFile(db)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("db文件读取失败", err)
 	}
 
 	var offset map[uint64]int64
 	err = json.Unmarshal(content, &offset)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("db文件解析失败", err)
 	}
 
 	return offset
@@ -142,11 +159,11 @@ func (L *Lognile) load(db string) map[uint64]int64 {
 func (L *Lognile) save(db string) {
 	content, err := json.Marshal(L.offset)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("offset数据编码失败", err)
 	}
 
 	if err := os.WriteFile(db, []byte(content), 0666); err != nil {
-		log.Fatal(err)
+		log.Fatal("offset数据存储失败", err)
 	}
 }
 
@@ -158,33 +175,26 @@ func (L *Lognile) inode(file string) uint64 {
 
 	var stat syscall.Stat_t
 	if err := syscall.Stat(file, &stat); err != nil {
-		panic(err)
+		log.Fatal("获取文件inode失败", err)
 	}
 
 	L.node[file] = stat.Ino
-
-	log.Println("node", file, stat.Ino)
 
 	return stat.Ino
 }
 
 func (L *Lognile) add(dir string) {
-	files := []string{}
-
 	for _, p := range L.pattern[dir] {
 		list, err := filepath.Glob(dir+"/"+p)
 		if err!=nil {
-			log.Println(err)
+			log.Println("文件夹文件匹配失败", err)
 			continue
 		}
 
 		for _, file := range list {
-			files = append(files, file)
 			L.read(file)
 		}
 	}
-
-	log.Println(files)
 }
 
 func (L *Lognile) read(file string) {
@@ -195,16 +205,17 @@ func (L *Lognile) read(file string) {
 		line, err := reader.ReadString('\n')
 		if err == io.EOF {
 			if len(line)>1 {
-				L.log <- map[string]string{"file-end":file, "log":line[:len(line)-1]}
+				L.log <- map[string]string{"file":file, "log":line[:len(line)-1]}
 			}
 			break
 		}
+
 		if err != nil {
-			panic(err)
+			log.Fatal("文件日志读取失败,file:",file, "error:", err)
 		}
-		//log.Println()
+
 		if len(line)>1 {
-			L.log <- map[string]string{"file-mid":file, "log":line[:len(line)-1]}
+			L.log <- map[string]string{"file":file, "log":line[:len(line)-1]}
 		}
 	}
 
@@ -212,8 +223,6 @@ func (L *Lognile) read(file string) {
 
 	_node := L.inode(file)
 	L.offset[_node] = offset
-
-	log.Println("offset", file, offset)
 }
 
 func (L *Lognile) open(file string) *os.File {
@@ -222,13 +231,12 @@ func (L *Lognile) open(file string) *os.File {
 	if !ok {
 		_fp, err := os.Open(file)
 		if err != nil {
-			panic(err)
+			log.Fatal("日志文件打开失败,file:", file, "error:", err)
 		}
 
 		offset, ok := L.offset[node]
 		if ok {
 			_fp.Seek(offset, 0)
-			log.Println("重置指针位置", offset)
 		}
 
 		fp = _fp
@@ -239,54 +247,46 @@ func (L *Lognile) open(file string) *os.File {
 }
 
 func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
-        log.Println("start")
-        for {
-            select {
-            case event, ok := <-watcher.Events:
-                if !ok {
-                    return
-                }
-                log.Println("event:", event.Op, event.Name)
+	for {
+		select {
+			case event, ok := <-watcher.Events:
+							if !ok {
+								return
+							}
 
-                if event.Has(fsnotify.Create)  {
-                    fid := L.inode(event.Name)
-                    _, ok := L.offset[fid]
-                    if ok {
-                        log.Println("旧文件，采用原进度")
-                    } else {
-                        L.create(event.Name)
-                        log.Println("新文件,添加新节点")
-                    }
-                }
+				if event.Has(fsnotify.Create)  {
+					fid := L.inode(event.Name)
+					_, ok := L.offset[fid]
+					if !ok {
+						L.create(event.Name)
+						log.Println("新日志文件:", event.Name)
+					}
+				}
 
-                if event.Has(fsnotify.Rename) {
-                    log.Println("被改名或移动")
-                }
+                //if event.Has(fsnotify.Rename) {
+                //}
 
-                if event.Has(fsnotify.Write) {
-                    log.Println("文件写入")
-                    L.read(event.Name)
-                }
+				if event.Has(fsnotify.Write) {
+					L.read(event.Name)
+				}
 
-                if event.Has(fsnotify.Remove) {
-                    log.Println("被删除")
-                    L.delete(event.Name)
-                }
+				if event.Has(fsnotify.Remove) {
+					log.Println("日志文件被删除:", event.Name)
+					L.delete(event.Name)
+				}
 
-            case err, ok := <-watcher.Errors:
-                if !ok {
-                    return
-                }
-                log.Println("error:", err)
-            }
-        }
-        log.Println("exit")
+			case _, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+		}
+	}
 }
 
 func (L *Lognile) create(file string) {
 	abs, err := filepath.Abs(file)
 	if err!=nil {
-		log.Fatal(err)
+		log.Fatal("文件获取绝对路径失败，file:", file, "error:", err)
 	}
 
 	dir  := filepath.Dir(abs)
@@ -305,33 +305,27 @@ func (L *Lognile) create(file string) {
 	}
 
 	if match==false {
-		log.Println("不匹配的文件", file)
+		log.Println("不匹配的文件：", file)
 		return
 	}
-
-	log.Println("新文件读取", file)
 
 	L.read(file)
 }
 
 func (L *Lognile) delete(file string) {
-	log.Println("被删除", file)
-
-	fid := L.inode(file)
+	fid    := L.inode(file)
     _, ok1 := L.offset[fid]
     if ok1 {
-    	log.Println("删除进度", file)
     	delete(L.offset, fid)
     }
 
     fp, ok2 := L.fp[fid]
     if ok2 {
-    	log.Println("关闭文件", file)
     	fp.Close()
     }
 }
 
-func (L *Lognile) exit() {
+func (L *Lognile) signal() {
 	c := make(chan os.Signal)
 	signal.Notify(c, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, 
                          syscall.SIGQUIT, syscall.SIGUSR1, syscall.SIGUSR2)
@@ -339,8 +333,10 @@ func (L *Lognile) exit() {
 		for s := range c {
 			switch s {
 				case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
-					log.Println("Program Exit...", s)
+					log.Println("保存日志读取进度")
 					L.save(L.db)
+
+					log.Println("进程退出成功")
 					os.Exit(0)
 				case syscall.SIGUSR1:
 					log.Println("usr1 signal", s)
