@@ -43,7 +43,7 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 
 	config := L.config(cfg)
 
-	log.Println("解析配置文件成功")
+	log.Println("解析配置文件成功:", cfg)
 
 	if v, ok := config["db"];ok {
 		L.db = v.(string)
@@ -112,7 +112,7 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 func (L *Lognile) config(cfg string) map[string]any {
 	content, err := os.ReadFile(cfg)
     if err != nil {
-        log.Fatal("配置文件读取失败：", err)
+        log.Fatal("配置文件读取失败:", err)
     }
 
     data := make(map[string]any)
@@ -130,7 +130,8 @@ func (L *Lognile) parse(pattern any) {
 	for _, p := range pattern.([]any) {
 		abs, err := filepath.Abs(p.(string))
 		if err!=nil {
-			log.Fatal("文件路径转绝对路径失败:", p.(string), err)
+			log.Println("文件路径转绝对路径失败，file:", p.(string), "error:", err)
+			continue
 		}
 
 		dir  := filepath.Dir(abs)
@@ -150,18 +151,18 @@ func (L *Lognile) load(db string) map[uint64]int64 {
 		if os.IsNotExist(err) {
 			return map[uint64]int64{}
 		}
-		log.Fatal("db文件报错", err)
+		log.Fatal("db文件加载失败:", err)
 	}
 
 	content, err := os.ReadFile(db)
 	if err != nil {
-		log.Fatal("db文件读取失败", err)
+		log.Fatal("db文件读取失败:", err)
 	}
 
 	var offset map[uint64]int64
 	err = json.Unmarshal(content, &offset)
 	if err != nil {
-		log.Fatal("db文件解析失败", err)
+		log.Fatal("db文件解析失败:", err)
 	}
 
 	return offset
@@ -170,11 +171,11 @@ func (L *Lognile) load(db string) map[uint64]int64 {
 func (L *Lognile) save(db string) {
 	content, err := json.Marshal(L.offset)
 	if err != nil {
-		log.Fatal("offset数据编码失败", err)
+		log.Fatal("读取进度数据编码失败:", err)
 	}
 
 	if err := os.WriteFile(db, []byte(content), 0666); err != nil {
-		log.Fatal("offset数据存储失败", err)
+		log.Fatal("读取进度数据存储失败:", err)
 	}
 }
 
@@ -186,7 +187,7 @@ func (L *Lognile) inode(file string) uint64 {
 
 	var stat syscall.Stat_t
 	if err := syscall.Stat(file, &stat); err != nil {
-		log.Fatal("获取文件inode失败", err)
+		log.Fatal("获取文件inode失败,file:", file, "error:", err)
 	}
 
 	L.node[file] = stat.Ino
@@ -198,7 +199,7 @@ func (L *Lognile) add(dir string) {
 	for _, p := range L.pattern[dir] {
 		list, err := filepath.Glob(dir+"/"+p)
 		if err!=nil {
-			log.Println("文件夹文件匹配失败", err)
+			log.Println("文件夹文件匹配失败:", err)
 			continue
 		}
 
@@ -270,7 +271,7 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 					_, ok := L.offset[fid]
 					if !ok {
 						L.create(event.Name)
-						log.Println("新日志文件:", event.Name)
+						log.Println("发现新日志文件:", event.Name)
 					}
 				}
 
@@ -297,7 +298,8 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 func (L *Lognile) create(file string) {
 	abs, err := filepath.Abs(file)
 	if err!=nil {
-		log.Fatal("文件获取绝对路径失败，file:", file, "error:", err)
+		log.Println("文件获取绝对路径失败,file:", file, "error:", err)
+		return
 	}
 
 	dir  := filepath.Dir(abs)
@@ -316,7 +318,7 @@ func (L *Lognile) create(file string) {
 	}
 
 	if match==false {
-		log.Println("不匹配的文件：", file)
+		log.Println("不匹配的日志文件:", file)
 		return
 	}
 
@@ -342,11 +344,9 @@ func (L *Lognile) Exit() {
 	log.Println("保存日志进度成功")
 
 	log.Println("关闭文件句柄...")
-
 	for _, _fp := range L.fp {
 		_fp.Close()
 	}
-
 	log.Println("关闭文件句柄成功")
 
 	log.Println("进程退出成功")
