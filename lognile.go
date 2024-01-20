@@ -13,10 +13,19 @@ import "github.com/fsnotify/fsnotify"
 
 func main() {
 	L := Lognile{}
-	L.Init()
+	L.Init("config.yaml", Print)
 
 	log.Println("ok")
 }
+
+func Print(row map[string]string) {
+	log.Println("日志：", row)
+}
+
+
+
+
+
 
 type Lognile struct {
 	offset map[uint64]int64
@@ -26,12 +35,13 @@ type Lognile struct {
 	fp map[uint64]*os.File
 	node map[string]uint64
 	watcher *fsnotify.Watcher
+	callback func(log map[string]string)
 }
 
-func (L *Lognile) Init() {
+func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 	log.Println("启动")
 
-	config := L.config("config.yaml")
+	config := L.config(cfg)
 
 	log.Println("解析配置文件成功")
 
@@ -56,6 +66,7 @@ func (L *Lognile) Init() {
 	L.log  = make(chan map[string]string, 1000)
 	L.fp   = map[uint64]*os.File{}
 	L.node = map[string]uint64{}
+	L.callback = callback
 
 	log.Println("启动文件夹监听")
 
@@ -83,7 +94,7 @@ func (L *Lognile) Init() {
 		for{
         	select {
         		case v := <-L.log:
-            			log.Println(v)
+            				L.callback(v)
             	default :
     		}
     	}
@@ -325,6 +336,24 @@ func (L *Lognile) delete(file string) {
     }
 }
 
+func (L *Lognile) Exit() {
+	log.Println("保存日志进度...")
+	L.save(L.db)
+	log.Println("保存日志进度成功")
+
+	log.Println("关闭文件句柄...")
+
+	for _, _fp := range L.fp {
+		_fp.Close()
+	}
+
+	log.Println("关闭文件句柄成功")
+
+	log.Println("进程退出成功")
+
+	os.Exit(0)
+}
+
 func (L *Lognile) signal() {
 	c := make(chan os.Signal)
 	signal.Notify(c, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, 
@@ -333,11 +362,7 @@ func (L *Lognile) signal() {
 		for s := range c {
 			switch s {
 				case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
-					log.Println("保存日志读取进度")
-					L.save(L.db)
-
-					log.Println("进程退出成功")
-					os.Exit(0)
+					L.Exit()
 				case syscall.SIGUSR1:
 					log.Println("usr1 signal", s)
 				case syscall.SIGUSR2:
