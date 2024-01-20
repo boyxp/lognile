@@ -30,11 +30,11 @@ func Print(row map[string]string) {
 
 
 type Lognile struct {
-	offset map[uint64]int64
 	db string
+	offset map[uint64]int64
 	pattern map[string][]string
 	log chan map[string]string
-	fp map[uint64]*Handler
+	handler map[uint64]*Handler
 	node map[string]uint64
 	watcher *fsnotify.Watcher
 	callback func(log map[string]string)
@@ -65,9 +65,9 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 	}
 	L.parse(pattern)
 
-	L.log  = make(chan map[string]string, 1000)
-	L.fp   = map[uint64]*Handler{}
-	L.node = map[string]uint64{}
+	L.log      = make(chan map[string]string, 1000)
+	L.handler  = map[uint64]*Handler{}
+	L.node     = map[string]uint64{}
 	L.callback = callback
 
 	log.Println("启动文件夹监听")
@@ -132,7 +132,7 @@ func (L *Lognile) parse(pattern any) {
 	for _, p := range pattern.([]any) {
 		abs, err := filepath.Abs(p.(string))
 		if err!=nil {
-			log.Println("文件路径转绝对路径失败，file:", p.(string), "error:", err)
+			log.Println("文件路径转绝对路径失败,file:", p.(string), "error:", err)
 			continue
 		}
 
@@ -219,9 +219,9 @@ func (L *Lognile) read(file string, wait bool) {
 
 	log.Println("加锁", file)
 
-	fp     := handler.Fp()
-	reader := bufio.NewReader(fp)
 	retry  := 0
+	fp     := handler.Pointer()
+	reader := bufio.NewReader(fp)
 	for {
 		line, err := reader.ReadString('\n')
 		if err == io.EOF {
@@ -253,9 +253,8 @@ func (L *Lognile) read(file string, wait bool) {
 		retry = 0
 	}
 
-	offset, _ := fp.Seek(0, 1)
-
-	_node := L.inode(file)
+	_node          := L.inode(file)
+	offset, _      := fp.Seek(0, 1)
 	L.offset[_node] = offset
 
 	handler.Unlock()
@@ -265,23 +264,22 @@ func (L *Lognile) read(file string, wait bool) {
 
 func (L *Lognile) open(file string) *Handler {
 	node  := L.inode(file)
-	fp,ok := L.fp[node]
+	_,ok  := L.handler[node]
 	if !ok {
-		_fp, err := os.Open(file)
+		fp, err := os.Open(file)
 		if err != nil {
 			log.Fatal("日志文件打开失败,file:", file, "error:", err)
 		}
 
 		offset, ok := L.offset[node]
 		if ok {
-			_fp.Seek(offset, 0)
+			fp.Seek(offset, 0)
 		}
 
-		fp = &Handler{fp:_fp}
-		L.fp[node] = fp
+		L.handler[node] = &Handler{pointer:fp}
 	}
 
-	return fp
+	return L.handler[node]
 }
 
 func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
@@ -293,8 +291,8 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 							}
 
 				if event.Has(fsnotify.Create)  {
-					fid := L.inode(event.Name)
-					_, ok := L.offset[fid]
+					node  := L.inode(event.Name)
+					_, ok := L.offset[node]
 					if !ok {
 						L.create(event.Name)
 						log.Println("发现新日志文件:", event.Name)
@@ -352,15 +350,15 @@ func (L *Lognile) create(file string) {
 }
 
 func (L *Lognile) delete(file string) {
-	fid    := L.inode(file)
-    _, ok1 := L.offset[fid]
+	node   := L.inode(file)
+    _, ok1 := L.offset[node]
     if ok1 {
-    	delete(L.offset, fid)
+    	delete(L.offset, node)
     }
 
-    handler, ok2 := L.fp[fid]
+    handler, ok2 := L.handler[node]
     if ok2 {
-    	handler.Fp().Close()
+    	handler.Pointer().Close()
     }
 }
 
@@ -370,8 +368,8 @@ func (L *Lognile) Exit() {
 	log.Println("保存日志进度成功")
 
 	log.Println("关闭文件句柄...")
-	for _, _handler := range L.fp {
-		_handler.Fp().Close()
+	for _, _handler := range L.handler {
+		_handler.Pointer().Close()
 	}
 	log.Println("关闭文件句柄成功")
 
@@ -400,8 +398,9 @@ func (L *Lognile) signal() {
 	}()
 }
 
+
 type Handler struct {
-	fp *os.File
+	pointer *os.File
 	mu sync.Mutex
 }
 
@@ -413,6 +412,6 @@ func (H *Handler) Unlock() {
 	H.mu.Unlock()
 }
 
-func (H *Handler) Fp() *os.File {
-	return H.fp
+func (H *Handler) Pointer() *os.File {
+	return H.pointer
 }
