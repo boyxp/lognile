@@ -38,6 +38,7 @@ type Lognile struct {
 	log chan map[string]string
 	watcher *fsnotify.Watcher
 	callback func(log map[string]string)
+	exit bool
 }
 
 func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
@@ -183,10 +184,12 @@ func (L *Lognile) save(db string) {
 
 	content, err := json.Marshal(offset)
 	if err != nil {
+		log.Println("请手动保存进度数据：", offset)
 		log.Fatal("进度数据编码失败:", err)
 	}
 
 	if err := os.WriteFile(db, []byte(content), 0666); err != nil {
+		log.Println("请手动保存进度数据：", content)
 		log.Fatal("读取进度数据存储失败:", err)
 	}
 }
@@ -240,7 +243,7 @@ func (L *Lognile) read(file string, wait bool) {
 				L.log <- map[string]string{"file":file, "log":line[:len(line)-1]}
 			}
 
-			if wait==false || retry>=5 {
+			if wait==false || retry>2 || L.exit==true {
 				break
 			}
 
@@ -254,11 +257,16 @@ func (L *Lognile) read(file string, wait bool) {
 		}
 
 		if err != nil {
-			log.Fatal("文件日志读取失败,file:",file, "error:", err)
+			log.Println("文件日志读取失败,file:",file, "error:", err)
+			break
 		}
 
 		if len(line)>1 {
 			L.log <- map[string]string{"file":file, "log":line[:len(line)-1]}
+		}
+
+		if L.exit==true {
+			break
 		}
 
 		retry = 0
@@ -377,9 +385,14 @@ func (L *Lognile) delete(file string) {
 }
 
 func (L *Lognile) Exit() {
-	log.Println("保存日志进度...")
-	L.save(L.db)
-	log.Println("保存日志进度成功")
+	L.exit = true
+
+	log.Println("等待读取进程退出...3s")
+	time.Sleep(time.Second)
+	log.Println("等待读取进程退出...2s")
+	time.Sleep(time.Second)
+	log.Println("等待读取进程退出...1s")
+	time.Sleep(time.Second)
 
 	log.Println("关闭文件句柄...")
 	L.handler.Range(func(node any, handler any) bool {
@@ -387,6 +400,10 @@ func (L *Lognile) Exit() {
         return true
     })
 	log.Println("关闭文件句柄成功")
+
+	log.Println("保存日志进度...")
+	L.save(L.db)
+	log.Println("保存日志进度成功")
 
 	log.Println("进程退出成功")
 
