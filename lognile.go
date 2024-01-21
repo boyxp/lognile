@@ -42,11 +42,11 @@ type Lognile struct {
 }
 
 func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
-	log.Println("启动")
+	log.Println("启动...")
 
 	config := L.config(cfg)
 
-	log.Println("解析配置文件成功:", cfg)
+	log.Println("解析配置文件:", cfg)
 
 	if v, ok := config["db"];ok {
 		L.db = v.(string)
@@ -54,11 +54,9 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 		L.db = "lognile.db"
 	}
 
-	log.Println("读取进度数据库文件为:", L.db)
+	log.Println("读取进度数据:", L.db)
 
 	L.load(L.db)
-
-	log.Println("加载数据库进度文件成功")
 
 	pattern, ok := config["pattern"]
 	if !ok {
@@ -70,36 +68,36 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 	L.log      = make(chan map[string]string, 1000)
 
 
+
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal("文件夹监听初始化失败", err)
+	}
+	L.watcher = watcher
+	defer watcher.Close()
+
 	log.Println("启动文件夹监听")
 
-    watcher, err := fsnotify.NewWatcher()
-    if err != nil {
-        log.Fatal("文件夹监听初始化失败", err)
-    }
-    L.watcher = watcher
-    defer watcher.Close()
-
-    log.Println("文件夹监听进程启动成功")
-
 	for dir, _ := range L.pattern {
-		log.Println("添加日志监控文件夹:", dir)
+		log.Println("监听日志文件夹:", dir)
 
 		L.add(dir)
 		L.watcher.Add(dir)
 	}
 
-	log.Println("启动监听事件消费")
+	log.Println("启动监听事件消费进程")
     go L.listen(watcher)
 
-    log.Println("启动日志实时输出")
+    log.Println("启动日志实时回调")
 	go func() {
 		for{
-        	select {
-        		case v := <-L.log:
-            				L.callback(v)
-            	default :
-    		}
-    	}
+			select {
+				case v := <-L.log:
+						L.callback(v)
+				default :
+			}
+		}
 	}()
 
 	log.Println("监听进程退出信号")
@@ -231,9 +229,9 @@ func (L *Lognile) read(file string, wait bool) {
 		return
 	}
 
-	log.Println("加锁", file)
+	//log.Println("加锁", file)
 
-	retry  := 0
+	retry  := 1
 	fp     := handler.Pointer()
 	reader := bufio.NewReader(fp)
 	for {
@@ -243,13 +241,12 @@ func (L *Lognile) read(file string, wait bool) {
 				L.log <- map[string]string{"file":file, "log":line[:len(line)-1]}
 			}
 
-			if wait==false || retry>2 || L.exit==true {
+			if wait==false || retry>3 || L.exit==true {
 				break
 			}
 
+			log.Println("等待新记录", file, retry, "秒")
 			time.Sleep(time.Duration(1) * time.Second)
-
-			log.Println("休息重试", file, retry)
 
 			retry++
 
@@ -278,7 +275,7 @@ func (L *Lognile) read(file string, wait bool) {
 
 	handler.Unlock()
 
-	log.Println("解锁", file)
+	//log.Println("解锁", file)
 }
 
 func (L *Lognile) open(file string) *Handler {
