@@ -31,11 +31,11 @@ func Print(row map[string]string) {
 
 type Lognile struct {
 	db string
+	node sync.Map
 	offset sync.Map
+	handler sync.Map
 	pattern map[string][]string
 	log chan map[string]string
-	handler sync.Map
-	node map[string]uint64
 	watcher *fsnotify.Watcher
 	callback func(log map[string]string)
 }
@@ -65,9 +65,9 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 	}
 	L.parse(pattern)
 
-	L.log      = make(chan map[string]string, 1000)
-	L.node     = map[string]uint64{}
 	L.callback = callback
+	L.log      = make(chan map[string]string, 1000)
+
 
 	log.Println("启动文件夹监听")
 
@@ -192,9 +192,10 @@ func (L *Lognile) save(db string) {
 }
 
 func (L *Lognile) inode(file string) uint64 {
-	_node, ok := L.node[file]
+	value, ok := L.node.Load(file)
 	if ok {
-		return _node
+		node, _ := value.(uint64)
+		return node
 	}
 
 	var stat syscall.Stat_t
@@ -202,7 +203,7 @@ func (L *Lognile) inode(file string) uint64 {
 		log.Fatal("获取文件inode失败,file:", file, "error:", err)
 	}
 
-	L.node[file] = stat.Ino
+	L.node.Store(file, stat.Ino)
 
 	return stat.Ino
 }
@@ -216,7 +217,7 @@ func (L *Lognile) add(dir string) {
 		}
 
 		for _, file := range list {
-			L.read(file, false)
+			go L.read(file, false)
 		}
 	}
 }
@@ -273,7 +274,7 @@ func (L *Lognile) read(file string, wait bool) {
 }
 
 func (L *Lognile) open(file string) *Handler {
-	node  := L.inode(file)
+	node        := L.inode(file)
 	handler,ok  := L.handler.Load(node)
 	if !ok {
 		fp, err := os.Open(file)
@@ -359,7 +360,7 @@ func (L *Lognile) create(file string) {
 		return
 	}
 
-	L.read(file, false)
+	go L.read(file, false)
 }
 
 func (L *Lognile) delete(file string) {
