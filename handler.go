@@ -1,4 +1,4 @@
-package lognilen
+package lognile
 
 import "os"
 import "sync"
