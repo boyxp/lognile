@@ -1,0 +1,4 @@
+pattern :
+    - /tmp/a/php-fpm-*.log
+    - /tmp/a/nginx-*.log
+db : lognile.db
