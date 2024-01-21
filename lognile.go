@@ -34,7 +34,7 @@ type Lognile struct {
 	offset sync.Map
 	pattern map[string][]string
 	log chan map[string]string
-	handler map[uint64]*Handler
+	handler sync.Map
 	node map[string]uint64
 	watcher *fsnotify.Watcher
 	callback func(log map[string]string)
@@ -66,7 +66,6 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 	L.parse(pattern)
 
 	L.log      = make(chan map[string]string, 1000)
-	L.handler  = map[uint64]*Handler{}
 	L.node     = map[string]uint64{}
 	L.callback = callback
 
@@ -275,7 +274,7 @@ func (L *Lognile) read(file string, wait bool) {
 
 func (L *Lognile) open(file string) *Handler {
 	node  := L.inode(file)
-	_,ok  := L.handler[node]
+	handler,ok  := L.handler.Load(node)
 	if !ok {
 		fp, err := os.Open(file)
 		if err != nil {
@@ -288,10 +287,12 @@ func (L *Lognile) open(file string) *Handler {
 			fp.Seek(_offset, 0)
 		}
 
-		L.handler[node] = &Handler{pointer:fp}
+		handler = &Handler{pointer:fp}
+
+		L.handler.Store(node, handler)
 	}
 
-	return L.handler[node]
+	return handler.(*Handler)
 }
 
 func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
@@ -368,9 +369,9 @@ func (L *Lognile) delete(file string) {
     	L.offset.Delete(node)
     }
 
-    handler, ok2 := L.handler[node]
+    handler, ok2 := L.handler.Load(node)
     if ok2 {
-    	handler.Pointer().Close()
+    	handler.(*Handler).Pointer().Close()
     }
 }
 
@@ -380,9 +381,10 @@ func (L *Lognile) Exit() {
 	log.Println("保存日志进度成功")
 
 	log.Println("关闭文件句柄...")
-	for _, _handler := range L.handler {
-		_handler.Pointer().Close()
-	}
+	L.handler.Range(func(node any, handler any) bool {
+		handler.(*Handler).Pointer().Close()
+        return true
+    })
 	log.Println("关闭文件句柄成功")
 
 	log.Println("进程退出成功")
