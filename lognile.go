@@ -1,4 +1,4 @@
-package main
+package lognilen
 
 import "os"
 import "io"
@@ -12,22 +12,6 @@ import "path/filepath"
 import "encoding/json"
 import "gopkg.in/yaml.v3"
 import "github.com/fsnotify/fsnotify"
-
-func main() {
-	L := Lognile{}
-	L.Init("config.yaml", Print)
-
-	log.Println("ok")
-}
-
-func Print(row map[string]string) {
-	log.Println("日志：", row)
-}
-
-
-
-
-
 
 type Lognile struct {
 	db string
@@ -425,22 +409,4 @@ func (L *Lognile) signal() {
 			}
 		}
 	}()
-}
-
-
-type Handler struct {
-	pointer *os.File
-	mu sync.Mutex
-}
-
-func (H *Handler) Lock() bool {
-	return H.mu.TryLock()
-}
-
-func (H *Handler) Unlock() {
-	H.mu.Unlock()
-}
-
-func (H *Handler) Pointer() *os.File {
-	return H.pointer
 }
