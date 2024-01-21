@@ -31,7 +31,7 @@ func Print(row map[string]string) {
 
 type Lognile struct {
 	db string
-	offset map[uint64]int64
+	offset sync.Map
 	pattern map[string][]string
 	log chan map[string]string
 	handler map[uint64]*Handler
@@ -55,7 +55,7 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 
 	log.Println("读取进度数据库文件为:", L.db)
 
-	L.offset = L.load(L.db)
+	L.load(L.db)
 
 	log.Println("加载数据库进度文件成功")
 
@@ -147,11 +147,11 @@ func (L *Lognile) parse(pattern any) {
 	}
 }
 
-func (L *Lognile) load(db string) map[uint64]int64 {
+func (L *Lognile) load(db string) {
 	_, err := os.Stat(db)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[uint64]int64{}
+			return
 		}
 		log.Fatal("db文件加载失败:", err)
 	}
@@ -167,13 +167,24 @@ func (L *Lognile) load(db string) map[uint64]int64 {
 		log.Fatal("db文件解析失败:", err)
 	}
 
-	return offset
+	for _node,_offset := range offset {
+		L.offset.Store(_node, _offset)
+	}
 }
 
 func (L *Lognile) save(db string) {
-	content, err := json.Marshal(L.offset)
+	offset := map[uint64]int64{}
+
+	L.offset.Range(func(key any, value any) bool {
+		_node, _     := key.(uint64)
+		_offset, _   := value.(int64)
+        offset[_node] = _offset
+        return true
+    })
+
+	content, err := json.Marshal(offset)
 	if err != nil {
-		log.Fatal("读取进度数据编码失败:", err)
+		log.Fatal("进度数据编码失败:", err)
 	}
 
 	if err := os.WriteFile(db, []byte(content), 0666); err != nil {
@@ -255,7 +266,7 @@ func (L *Lognile) read(file string, wait bool) {
 
 	_node          := L.inode(file)
 	offset, _      := fp.Seek(0, 1)
-	L.offset[_node] = offset
+	L.offset.Store(_node, offset)
 
 	handler.Unlock()
 
@@ -271,9 +282,10 @@ func (L *Lognile) open(file string) *Handler {
 			log.Fatal("日志文件打开失败,file:", file, "error:", err)
 		}
 
-		offset, ok := L.offset[node]
+		offset, ok := L.offset.Load(node)
 		if ok {
-			fp.Seek(offset, 0)
+			_offset, _ := offset.(int64)
+			fp.Seek(_offset, 0)
 		}
 
 		L.handler[node] = &Handler{pointer:fp}
@@ -292,7 +304,7 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 
 				if event.Has(fsnotify.Create)  {
 					node  := L.inode(event.Name)
-					_, ok := L.offset[node]
+					_, ok := L.offset.Load(node)
 					if !ok {
 						L.create(event.Name)
 						log.Println("发现新日志文件:", event.Name)
@@ -351,9 +363,9 @@ func (L *Lognile) create(file string) {
 
 func (L *Lognile) delete(file string) {
 	node   := L.inode(file)
-    _, ok1 := L.offset[node]
+    _, ok1 := L.offset.Load(node)
     if ok1 {
-    	delete(L.offset, node)
+    	L.offset.Delete(node)
     }
 
     handler, ok2 := L.handler[node]
