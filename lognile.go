@@ -7,8 +7,6 @@ import "sync"
 import "syscall"
 import "os/signal"
 import "path/filepath"
-
-
 import "github.com/fsnotify/fsnotify"
 
 type Lognile struct {
@@ -20,25 +18,21 @@ type Lognile struct {
 	log chan map[string]string
 	watcher *fsnotify.Watcher
 	callback func(log map[string]string)
-	exit bool
 }
 
 func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 	log.Println("启动...")
 
-	config   := (&Config{}).Init(cfg)
-	L.db      = config.Db()
+	config    := (&Config{}).Init(cfg)
+	L.db       = config.Db()
 	L.patterns = config.Pattern()
 	log.Println("解析配置文件:", cfg)
 
-	log.Println("读取进度数据:", L.db)
-
 	L.offset = (&Offset{L.db}).Load()
+	log.Println("读取进度数据:", L.db)
 
 	L.callback = callback
 	L.log      = make(chan map[string]string, 1000)
-
-
 
 
 	watcher, err := fsnotify.NewWatcher()
@@ -208,8 +202,6 @@ func (L *Lognile) create(file string) {
 }
 
 func (L *Lognile) Exit() {
-	L.exit = true
-
 	log.Println("等待读取进程退出...3s")
 	time.Sleep(time.Second)
 	log.Println("等待读取进程退出...2s")
