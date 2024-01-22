@@ -8,7 +8,7 @@ import "syscall"
 import "os/signal"
 import "path/filepath"
 import "encoding/json"
-import "gopkg.in/yaml.v3"
+
 import "github.com/fsnotify/fsnotify"
 
 type Lognile struct {
@@ -16,7 +16,7 @@ type Lognile struct {
 	node sync.Map
 	offset sync.Map
 	registrar sync.Map
-	pattern map[string][]string
+	patterns map[string][]string
 	log chan map[string]string
 	watcher *fsnotify.Watcher
 	callback func(log map[string]string)
@@ -26,25 +26,14 @@ type Lognile struct {
 func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 	log.Println("启动...")
 
-	config := L.config(cfg)
-
+	config   := (&Config{}).Init(cfg)
+	L.db      = config.Db()
+	L.patterns = config.Pattern()
 	log.Println("解析配置文件:", cfg)
-
-	if v, ok := config["db"];ok {
-		L.db = v.(string)
-	} else {
-		L.db = "lognile.db"
-	}
 
 	log.Println("读取进度数据:", L.db)
 
 	L.load(L.db)
-
-	pattern, ok := config["pattern"]
-	if !ok {
-		panic("没有配置日志监听路径")	
-	}
-	L.parse(pattern)
 
 	L.callback = callback
 	L.log      = make(chan map[string]string, 1000)
@@ -61,7 +50,7 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 
 	log.Println("启动文件夹监听")
 
-	for dir, _ := range L.pattern {
+	for dir, _ := range L.patterns {
 		log.Println("监听日志文件夹:", dir)
 
 		L.add(dir)
@@ -89,42 +78,6 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 	log.Println("启动成功")
 
 	<-make(chan struct{})
-}
-
-func (L *Lognile) config(cfg string) map[string]any {
-	content, err := os.ReadFile(cfg)
-    if err != nil {
-        log.Fatal("配置文件读取失败:", err)
-    }
-
-    data := make(map[string]any)
-    err   = yaml.Unmarshal(content, &data)
-    if err != nil {
-        log.Fatal("配置文件解析失败:", err)
-    }
-
-    return data
-}
-
-func (L *Lognile) parse(pattern any) {
-	L.pattern = map[string][]string{}
-
-	for _, p := range pattern.([]any) {
-		abs, err := filepath.Abs(p.(string))
-		if err!=nil {
-			log.Println("文件路径转绝对路径失败,file:", p.(string), "error:", err)
-			continue
-		}
-
-		dir  := filepath.Dir(abs)
-		base := filepath.Base(abs)
-
-		if _, ok := L.pattern[dir];ok {
-			L.pattern[dir] = append(L.pattern[dir], base)
-		} else {
-			L.pattern[dir] = []string{base}
-		}
-	}
 }
 
 func (L *Lognile) load(db string) {
@@ -192,7 +145,7 @@ func (L *Lognile) inode(file string) uint64 {
 }
 
 func (L *Lognile) add(dir string) {
-	for _, p := range L.pattern[dir] {
+	for _, p := range L.patterns[dir] {
 		list, err := filepath.Glob(dir+"/"+p)
 		if err!=nil {
 			log.Println("文件夹文件匹配失败:", err)
@@ -278,7 +231,7 @@ func (L *Lognile) create(file string) {
 	base := filepath.Base(abs)
 
 	match := false
-	for _, p := range L.pattern[dir] {
+	for _, p := range L.patterns[dir] {
 		_match, err := filepath.Match(p, base)
 		if err!=nil {
 			panic(err)
