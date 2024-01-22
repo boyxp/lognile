@@ -7,8 +7,8 @@ import "strconv"
 import "github.com/boyxp/lognile"
 
 func main() {
-	go Write("/tmp/a/php-fpm-1.log", "php-query")
-	go Write("/tmp/a/nginx-1.log", "nginx-query")
+	go Write("./_log/php-fpm-1.log", "php-query")
+	go Write("./_log/nginx-1.log", "nginx-query")
 
 	L := lognile.Lognile{}
 	L.Init("config.yaml", Print)
