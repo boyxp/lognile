@@ -1,11 +1,9 @@
 package lognile
 
 import "os"
-import "io"
 import "log"
 import "time"
 import "sync"
-import "bufio"
 import "syscall"
 import "os/signal"
 import "path/filepath"
@@ -17,7 +15,7 @@ type Lognile struct {
 	db string
 	node sync.Map
 	offset sync.Map
-	handler sync.Map
+	registrar sync.Map
 	pattern map[string][]string
 	log chan map[string]string
 	watcher *fsnotify.Watcher
@@ -157,9 +155,9 @@ func (L *Lognile) load(db string) {
 func (L *Lognile) save(db string) {
 	offset := map[uint64]int64{}
 
-	L.offset.Range(func(key any, value any) bool {
-		_node, _     := key.(uint64)
-		_offset, _   := value.(int64)
+	L.registrar.Range(func(key any, value any) bool {
+		_node, _ := key.(uint64)
+		_offset  := value.(*Reader).Offset()
         offset[_node] = _offset
         return true
     })
@@ -202,87 +200,20 @@ func (L *Lognile) add(dir string) {
 		}
 
 		for _, file := range list {
-			go L.read(file, false)
-		}
-	}
-}
-
-func (L *Lognile) read(file string, wait bool) {
-	handler := L.open(file)
-	if handler.Lock()==false {
-		return
-	}
-
-	//log.Println("加锁", file)
-
-	retry  := 1
-	fp     := handler.Pointer()
-	reader := bufio.NewReader(fp)
-	for {
-		line, err := reader.ReadString('\n')
-		if err == io.EOF {
-			if len(line)>1 {
-				L.log <- map[string]string{"file":file, "log":line[:len(line)-1]}
+			var offset int64
+			node   := L.inode(file)
+			v, ok := L.offset.Load(node)
+			if ok {
+				offset, _ = v.(int64)
+			} else {
+				offset = 0
 			}
 
-			if wait==false || retry>3 || L.exit==true {
-				break
-			}
-
-			log.Println("等待新记录", file, retry, "秒")
-			time.Sleep(time.Duration(1) * time.Second)
-
-			retry++
-
-			continue
+			reader := &Reader{file:file,offset:offset}
+			go reader.Read(false, L.log)
+			L.registrar.Store(node, reader)
 		}
-
-		if err != nil {
-			log.Println("文件日志读取失败,file:",file, "error:", err)
-			break
-		}
-
-		if len(line)>1 {
-			L.log <- map[string]string{"file":file, "log":line[:len(line)-1]}
-		}
-
-		if L.exit==true {
-			break
-		}
-
-		retry = 0
 	}
-
-	_node          := L.inode(file)
-	offset, _      := fp.Seek(0, 1)
-	L.offset.Store(_node, offset)
-
-	handler.Unlock()
-
-	//log.Println("解锁", file)
-}
-
-func (L *Lognile) open(file string) *Handler {
-	node        := L.inode(file)
-	handler,ok  := L.handler.Load(node)
-	if !ok {
-		fp, err := os.Open(file)
-		if err != nil {
-			log.Fatal("日志文件打开失败,file:", file, "error:", err)
-		}
-
-		offset, ok := L.offset.Load(node)
-		if ok {
-			_offset, _ := offset.(int64)
-			fp.Seek(_offset, 0)
-		}
-
-		handler = &Handler{pointer:fp}
-
-		L.handler.Store(node, handler)
-	}
-
-	return handler.(*Handler)
 }
 
 func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
@@ -295,10 +226,15 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 
 				if event.Has(fsnotify.Create)  {
 					node  := L.inode(event.Name)
-					_, ok := L.offset.Load(node)
+					reader, ok := L.registrar.Load(node)
 					if !ok {
 						L.create(event.Name)
 						log.Println("发现新日志文件:", event.Name)
+					} else {
+						_reader := reader.(*Reader)
+						_name   := _reader.Name()
+						_reader.Rename(event.Name)
+						log.Println("文件改名:", _name, "->", event.Name)
 					}
 				}
 
@@ -306,12 +242,21 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
                 //}
 
 				if event.Has(fsnotify.Write) {
-					go L.read(event.Name, true)
+					node  := L.inode(event.Name)
+					reader, ok := L.registrar.Load(node)
+					if ok {
+						go reader.(*Reader).Read(true, L.log)
+					}
 				}
 
 				if event.Has(fsnotify.Remove) {
 					log.Println("日志文件被删除:", event.Name)
-					L.delete(event.Name)
+					node  := L.inode(event.Name)
+					reader, ok := L.registrar.Load(node)
+					if ok {
+						reader.(*Reader).Close()
+						L.registrar.Delete(node)
+					}
 				}
 
 			case _, ok := <-watcher.Errors:
@@ -349,20 +294,10 @@ func (L *Lognile) create(file string) {
 		return
 	}
 
-	go L.read(file, false)
-}
-
-func (L *Lognile) delete(file string) {
 	node   := L.inode(file)
-    _, ok1 := L.offset.Load(node)
-    if ok1 {
-    	L.offset.Delete(node)
-    }
-
-    handler, ok2 := L.handler.Load(node)
-    if ok2 {
-    	handler.(*Handler).Pointer().Close()
-    }
+	reader := &Reader{file:file}
+	go reader.Read(false, L.log)
+	L.registrar.Store(node, reader)
 }
 
 func (L *Lognile) Exit() {
@@ -376,8 +311,8 @@ func (L *Lognile) Exit() {
 	time.Sleep(time.Second)
 
 	log.Println("关闭文件句柄...")
-	L.handler.Range(func(node any, handler any) bool {
-		handler.(*Handler).Pointer().Close()
+	L.registrar.Range(func(node any, reader any) bool {
+		reader.(*Reader).Close()
         return true
     })
 	log.Println("关闭文件句柄成功")
