@@ -7,7 +7,7 @@ import "sync"
 import "syscall"
 import "os/signal"
 import "path/filepath"
-import "encoding/json"
+
 
 import "github.com/fsnotify/fsnotify"
 
@@ -33,7 +33,7 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 
 	log.Println("读取进度数据:", L.db)
 
-	L.load(L.db)
+	L.offset = (&Offset{L.db}).Load()
 
 	L.callback = callback
 	L.log      = make(chan map[string]string, 1000)
@@ -80,52 +80,6 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 	<-make(chan struct{})
 }
 
-func (L *Lognile) load(db string) {
-	_, err := os.Stat(db)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return
-		}
-		log.Fatal("db文件加载失败:", err)
-	}
-
-	content, err := os.ReadFile(db)
-	if err != nil {
-		log.Fatal("db文件读取失败:", err)
-	}
-
-	var offset map[uint64]int64
-	err = json.Unmarshal(content, &offset)
-	if err != nil {
-		log.Fatal("db文件解析失败:", err)
-	}
-
-	for _node,_offset := range offset {
-		L.offset.Store(_node, _offset)
-	}
-}
-
-func (L *Lognile) save(db string) {
-	offset := map[uint64]int64{}
-
-	L.registrar.Range(func(key any, value any) bool {
-		_node, _ := key.(uint64)
-		_offset  := value.(*Reader).Offset()
-        offset[_node] = _offset
-        return true
-    })
-
-	content, err := json.Marshal(offset)
-	if err != nil {
-		log.Println("请手动保存进度数据：", offset)
-		log.Fatal("进度数据编码失败:", err)
-	}
-
-	if err := os.WriteFile(db, []byte(content), 0666); err != nil {
-		log.Println("请手动保存进度数据：", content)
-		log.Fatal("读取进度数据存储失败:", err)
-	}
-}
 
 func (L *Lognile) inode(file string) uint64 {
 	value, ok := L.node.Load(file)
@@ -263,16 +217,18 @@ func (L *Lognile) Exit() {
 	log.Println("等待读取进程退出...1s")
 	time.Sleep(time.Second)
 
-	log.Println("关闭文件句柄...")
+	log.Println("保存进度，关闭文件句柄...")
+	offset := map[uint64]int64{}
 	L.registrar.Range(func(node any, reader any) bool {
-		reader.(*Reader).Close()
+		_reader := reader.(*Reader)
+		_reader.Close()
+		_node, _ := node.(uint64)
+		_offset  := _reader.Offset()
+        offset[_node] = _offset
         return true
     })
-	log.Println("关闭文件句柄成功")
-
-	log.Println("保存日志进度...")
-	L.save(L.db)
-	log.Println("保存日志进度成功")
+    (&Offset{L.db}).Save(offset)
+	log.Println("保存进度，关闭文件句柄成功")
 
 	log.Println("进程退出成功")
 
