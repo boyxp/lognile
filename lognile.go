@@ -61,10 +61,7 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
     log.Println("启动日志实时回调")
 	go func() {
 		for{
-			select {
-				case v := <-L.log:
-						L.callback(v)
-			}
+			L.callback(<-L.log)
 		}
 	}()
 
