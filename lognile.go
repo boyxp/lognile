@@ -60,7 +60,6 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 			select {
 				case v := <-L.log:
 						L.callback(v)
-				default :
 			}
 		}
 	}()
