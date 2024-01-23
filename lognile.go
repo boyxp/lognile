@@ -169,10 +169,11 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 					}
 				}
 
-			case _, ok := <-watcher.Errors:
+			case err, ok := <-watcher.Errors:
 				if !ok {
 					return
 				}
+				log.Println(err)
 		}
 	}
 }
