@@ -4,12 +4,16 @@
 ![](https://img.shields.io/npm/l/vue.svg)
 
 ## 快速上手
-创建yaml配置文件config.yaml，db为日志读取进度存储文件，pattern为要监听的日志路径
+创建配置文件config.yaml
 ```
+#要监听的日志路径
 pattern :
     - ./_log/php-fpm-*.log
     - ./_log/nginx-*.log
+
+#日志进度存储文件
 db : lognile.db
+
 ```
 
 启动程序加载配置，即可监听对应文件的日志新记录
