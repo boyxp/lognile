@@ -80,7 +80,7 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 
 	log.Println("启动成功")
 
-	<-make(chan struct{})
+	<-make(chan int)
 }
 
 
