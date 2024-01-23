@@ -11,11 +11,9 @@ func main() {
 	go Write("./_log/nginx-1.log", "nginx-query")
 
 	L := lognile.Lognile{}
-	L.Init("config.yaml", Print)
-}
-
-func Print(row map[string]string) {
-	log.Println("日志：", row)
+	L.Init("config.yaml", func(row map[string]string) {
+		log.Println("日志：", row)
+	})
 }
 
 func Write(file string, content string) {
