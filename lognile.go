@@ -9,6 +9,10 @@ import "os/signal"
 import "path/filepath"
 import "github.com/fsnotify/fsnotify"
 
+func Init(cfg string, callback func(log map[string]string)) {
+	(&Lognile{}).Init(cfg, callback)
+}
+
 type Lognile struct {
 	db string
 	node sync.Map
