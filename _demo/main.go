@@ -10,9 +10,8 @@ func main() {
 	go Write("./_log/php-fpm-1.log", "php-query")
 	go Write("./_log/nginx-1.log", "nginx-query")
 
-	L := lognile.Lognile{}
-	L.Init("config.yaml", func(row map[string]string) {
-		log.Println("日志：", row)
+	lognile.Init("config.yaml", func(row map[string]string) {
+		log.Println(row)
 	})
 }
 
