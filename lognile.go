@@ -68,6 +68,15 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 		}
 	}()
 
+	log.Println("启动定时保存进度")
+	go func() {
+		for{
+			time.Sleep(time.Duration(60) * time.Second)
+			L.save()
+			log.Println("自动保存")
+		}
+	}()
+
 	log.Println("监听进程退出信号")
 
 	L.signal()
@@ -213,6 +222,15 @@ func (L *Lognile) Exit() {
 	time.Sleep(time.Second)
 
 	log.Println("保存进度，关闭文件句柄...")
+	L.save()
+	log.Println("保存进度，关闭文件句柄成功")
+
+	log.Println("进程退出成功")
+
+	os.Exit(0)
+}
+
+func (L *Lognile) save() {
 	offset := map[uint64]int64{}
 	L.registrar.Range(func(node any, reader any) bool {
 		_reader := reader.(*Reader)
@@ -223,11 +241,6 @@ func (L *Lognile) Exit() {
         return true
     })
     (&Offset{L.db}).Save(offset)
-	log.Println("保存进度，关闭文件句柄成功")
-
-	log.Println("进程退出成功")
-
-	os.Exit(0)
 }
 
 func (L *Lognile) signal() {
