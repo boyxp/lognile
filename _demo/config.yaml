@@ -1,4 +1,7 @@
+#要监听的日志路径
 pattern :
     - ./_log/php-fpm-*.log
     - ./_log/nginx-*.log
+
+#日志进度存储文件
 db : lognile.db
