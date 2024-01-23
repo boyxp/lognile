@@ -24,12 +24,9 @@ import "log"
 import "github.com/boyxp/lognile"
 
 func main() {
-	L := lognile.Lognile{}
-	L.Init("config.yaml", Print)
-}
-
-func Print(row map[string]string) {
-	log.Println("日志：", row)
+	lognile.Init("config.yaml", func(row map[string]string) {
+		log.Println(row)
+	})
 }
 ```
 
