@@ -5,7 +5,7 @@
 
 ## 快速上手
 创建配置文件config.yaml
-```
+```yaml
 #要监听的日志路径
 pattern :
     - ./_log/php-fpm-*.log
@@ -17,7 +17,7 @@ db : lognile.db
 ```
 
 启动程序加载配置，即可监听对应文件的日志新记录
-```
+```golang
 package main
 
 import "log"
