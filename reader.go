@@ -2,6 +2,7 @@ package lognile
 
 import "os"
 import "io"
+import "fmt"
 import "log"
 import "time"
 import "sync"
@@ -20,7 +21,11 @@ func (R *Reader) Read(wait bool, queue chan map[string]string) {
 		return
 	}
 
-	R.open()
+	_open := R.open()
+	if _open==false {
+		R.mu.Unlock()
+		return
+	}
 
 	retry  := 1
 	reader := bufio.NewReader(R.pointer)
@@ -45,7 +50,7 @@ func (R *Reader) Read(wait bool, queue chan map[string]string) {
 		}
 
 		if err != nil {
-			log.Println("文件日志读取失败,file:",R.file, "error:", err)
+			fmt.Fprintf(os.Stderr, "文件日志读取失败,file:"+R.file+",error:"+err.Error())
 			break
 		}
 
@@ -66,24 +71,29 @@ func (R *Reader) Read(wait bool, queue chan map[string]string) {
 	R.mu.Unlock()
 }
 
-func (R *Reader) open() {
+func (R *Reader) open() bool {
 	if R.pointer!=nil {
-		return
+		return true
 	}
 
 	fp, err := os.Open(R.file)
 	if err != nil {
-		log.Fatal("日志文件打开失败,file:", R.file, "error:", err)
+		fmt.Fprintf(os.Stderr, "日志文件打开失败,file:"+R.file+",error:"+err.Error())
+		return false
 	}
 
 	fp.Seek(R.offset, 0)
 
 	R.pointer = fp
+
+	return true
 }
 
 func (R *Reader) Close() {
 	R.close = true
-	R.pointer.Close()
+	if R.pointer!=nil {
+		R.pointer.Close()
+	}
 }
 
 func (R *Reader) Offset() int64 {

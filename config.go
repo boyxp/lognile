@@ -1,6 +1,7 @@
 package lognile
 
 import "os"
+import "fmt"
 import "log"
 import "path/filepath"
 import "gopkg.in/yaml.v3"
@@ -60,7 +61,7 @@ func (C *Config) parse(pattern any) {
 	for _, p := range pattern.([]any) {
 		abs, err := filepath.Abs(p.(string))
 		if err!=nil {
-			log.Println("文件路径转绝对路径失败,file:", p.(string), "error:", err)
+			fmt.Fprintf(os.Stderr, "文件路径转绝对路径失败,file:"+p.(string)+",error:"+err.Error())
 			continue
 		}
 

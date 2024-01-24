@@ -2,6 +2,7 @@ package lognile
 
 import "os"
 import "log"
+import "fmt"
 import "time"
 import "sync"
 import "syscall"
@@ -105,7 +106,7 @@ func (L *Lognile) add(dir string) {
 	for _, p := range L.patterns[dir] {
 		list, err := filepath.Glob(dir+"/"+p)
 		if err!=nil {
-			log.Println("文件夹文件匹配失败:", err)
+			fmt.Fprintf(os.Stderr, "文件夹文件匹配失败:"+err.Error())
 			continue
 		}
 
@@ -181,7 +182,7 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 func (L *Lognile) create(file string) {
 	abs, err := filepath.Abs(file)
 	if err!=nil {
-		log.Println("文件获取绝对路径失败,file:", file, "error:", err)
+		fmt.Fprintf(os.Stderr, "文件路径转绝对路径失败,file:"+file+",error:"+err.Error())
 		return
 	}
 
