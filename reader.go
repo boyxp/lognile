@@ -21,8 +21,7 @@ func (R *Reader) Read(wait bool, queue chan map[string]string) {
 		return
 	}
 
-	_open := R.open()
-	if _open==false {
+	if R.open()==false {
 		R.mu.Unlock()
 		return
 	}
@@ -65,9 +64,7 @@ func (R *Reader) Read(wait bool, queue chan map[string]string) {
 		retry = 0
 	}
 
-	offset, _ := R.pointer.Seek(0, 1)
-	R.offset   = offset
-
+	R.offset, _ = R.pointer.Seek(0, 1)
 	R.mu.Unlock()
 }
 

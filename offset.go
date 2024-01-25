@@ -16,8 +16,7 @@ func (O *Offset) Load() sync.Map {
 
 	var result sync.Map
 
-	_, err := os.Stat(O.db)
-	if err != nil {
+	if _, err := os.Stat(O.db);err!=nil {
 		if os.IsNotExist(err) {
 			return result
 		}
@@ -30,8 +29,7 @@ func (O *Offset) Load() sync.Map {
 	}
 
 	var offset map[uint64]int64
-	err = json.Unmarshal(content, &offset)
-	if err != nil {
+	if err = json.Unmarshal(content, &offset);err!=nil {
 		log.Fatal("db文件解析失败:", err)
 	}
 

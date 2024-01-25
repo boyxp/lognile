@@ -86,8 +86,7 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 
 
 func (L *Lognile) inode(file string) uint64 {
-	value, ok := L.node.Load(file)
-	if ok {
+	if value, ok := L.node.Load(file);ok {
 		node, _ := value.(uint64)
 		return node
 	}
@@ -113,8 +112,7 @@ func (L *Lognile) add(dir string) {
 		for _, file := range list {
 			var offset int64
 			node   := L.inode(file)
-			v, ok := L.offset.Load(node)
-			if ok {
+			if v, ok := L.offset.Load(node);ok {
 				offset, _ = v.(int64)
 			} else {
 				offset = 0
@@ -137,15 +135,14 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 
 				if event.Has(fsnotify.Create)  {
 					node  := L.inode(event.Name)
-					reader, ok := L.registrar.Load(node)
-					if !ok {
-						L.create(event.Name)
-						log.Println("发现新日志文件:", event.Name)
-					} else {
+					if reader, ok := L.registrar.Load(node);ok {
 						_reader := reader.(*Reader)
 						_name   := _reader.Name()
 						_reader.Rename(event.Name)
 						log.Println("文件改名:", _name, "->", event.Name)
+					} else {
+						L.create(event.Name)
+						log.Println("发现新日志文件:", event.Name)
 					}
 				}
 
@@ -154,8 +151,7 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 
 				if event.Has(fsnotify.Write) {
 					node  := L.inode(event.Name)
-					reader, ok := L.registrar.Load(node)
-					if ok {
+					if reader, ok := L.registrar.Load(node);ok {
 						go reader.(*Reader).Read(true, L.log)
 					}
 				}
@@ -163,8 +159,7 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 				if event.Has(fsnotify.Remove) {
 					log.Println("日志文件被删除:", event.Name)
 					node  := L.inode(event.Name)
-					reader, ok := L.registrar.Load(node)
-					if ok {
+					if reader, ok := L.registrar.Load(node);ok {
 						reader.(*Reader).Close()
 						L.registrar.Delete(node)
 					}
@@ -174,7 +169,7 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 				if !ok {
 					return
 				}
-				log.Println(err)
+				log.Fatal(err)
 		}
 	}
 }
