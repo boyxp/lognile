@@ -1,5 +1,5 @@
 # Lognile
-文件日志采集工具
+Golang实现的轻量级文件日志采集工具
 
 ![](https://img.shields.io/npm/l/vue.svg)
 
@@ -16,7 +16,7 @@ db : lognile.db
 
 ```
 
-启动程序加载配置，即可监听对应文件的日志新记录
+启动程序加载配置，即可监听对应文件的日志新记录，新日志自动回调
 ```golang
 package main
 
