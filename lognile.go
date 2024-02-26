@@ -70,7 +70,7 @@ func (L *Lognile) Init(cfg string, callback func(log map[string]string)) {
 	go func() {
 		for{
 			time.Sleep(time.Duration(60) * time.Second)
-			L.save()
+			L.save(false)
 			log.Println("自动保存")
 		}
 	}()
@@ -216,7 +216,7 @@ func (L *Lognile) Exit() {
 	time.Sleep(time.Second)
 
 	log.Println("保存进度，关闭文件句柄...")
-	L.save()
+	L.save(true)
 	log.Println("保存进度，关闭文件句柄成功")
 
 	log.Println("进程退出成功")
@@ -224,11 +224,13 @@ func (L *Lognile) Exit() {
 	os.Exit(0)
 }
 
-func (L *Lognile) save() {
+func (L *Lognile) save(close bool) {
 	offset := map[uint64]int64{}
 	L.registrar.Range(func(node any, reader any) bool {
 		_reader := reader.(*Reader)
-		_reader.Close()
+		if close==true {
+			_reader.Close()
+		}
 		_node, _ := node.(uint64)
 		_offset  := _reader.Offset()
         offset[_node] = _offset
