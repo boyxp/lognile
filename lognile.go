@@ -139,15 +139,20 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 						_reader := reader.(*Reader)
 						_name   := _reader.Name()
 						_reader.Rename(event.Name)
-						log.Println("文件改名:", _name, "->", event.Name)
+						log.Println("文件改名,监听新文件名:", _name, "->", event.Name)
 					} else {
 						L.create(event.Name)
-						log.Println("发现新日志文件:", event.Name)
+						log.Println("发现新文件,开始监听:", event.Name)
 					}
 				}
 
-                //if event.Has(fsnotify.Rename) {
-                //}
+                if event.Has(fsnotify.Rename) {
+                	log.Println("文件被移动,句柄关闭:", event.Name)
+                	node  := L.inode(event.Name)
+					if reader, ok := L.registrar.Load(node);ok {
+						reader.(*Reader).Close()
+					}
+                }
 
 				if event.Has(fsnotify.Write) {
 					node  := L.inode(event.Name)
@@ -157,7 +162,7 @@ func (L *Lognile) listen(watcher *fsnotify.Watcher)  {
 				}
 
 				if event.Has(fsnotify.Remove) {
-					log.Println("日志文件被删除:", event.Name)
+					log.Println("文件被删除,句柄关闭,删除采集器:", event.Name)
 					node  := L.inode(event.Name)
 					if reader, ok := L.registrar.Load(node);ok {
 						reader.(*Reader).Close()
