@@ -63,3 +63,5 @@ Lognile is a lightweight log collection tool implemented in Go. It allows you to
 - **Start Monitoring**: Once the application runs, it will start monitoring the specified log files for new entries.
 - **Handle Log Entries**: New log entries will be passed to the callback function, where you can process them as needed.
 
+## Demo
+Please see the [demo](_demo) for a demonstration of its actual performance.
